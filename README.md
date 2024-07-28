@@ -8,10 +8,10 @@ cooldown: 60
 particles: true
 Como solicitado eu utilizei o MYSQL como banco de dados para o Plugin.
 
-Já o Plugin de Wind Charge foi configurado com as seguintes opções:
+"Já o Plugin de Wind Charge foi configurado com as seguintes opções:
 explosion-power: 8.0
 projectile-speed: 1.0
-enable-particles: true
+enable-particles: true"
 
 Ao configurar as partículas de explosão do WindCharge eu utilizei EXPLOSION_EMITTER do Bukkit, pois no banco de dados mais atualizados ainda não existia os frames específicos da explosão criada pelo WindCharge do Vanilla.
 
