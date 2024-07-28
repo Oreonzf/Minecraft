@@ -74,68 +74,115 @@ O `HomeCommand` permite que os jogadores se teletransportem para uma localizaç�
    - Se ocorrer um erro ao acessar o banco de dados, uma mensagem de erro é registrada e enviada ao jogador.
 
 ### Exemplo de Código
-
+### /sethome
 ```java
-@Override
-public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-    if (!(sender instanceof Player)) {
-        sender.sendMessage("Only players can use this command.");
-        return true;
+public SetHomeCommand(HomePlugin plugin) {
+        this.plugin = plugin;
     }
 
-    Player player = (Player) sender;
-    UUID playerId = player.getUniqueId();
-    long cooldownTime = plugin.getConfig().getLong("cooldown");
-
-    if (cooldowns.containsKey(playerId)) {
-        long lastUsed = cooldowns.get(playerId);
-        long timeElapsed = (System.currentTimeMillis() - lastUsed) / 1000;
-
-        if (timeElapsed < cooldownTime) {
-            player.sendMessage("You must wait " + (cooldownTime - timeElapsed) + " seconds to use this command again.");
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("Only players can use this command.");
             return true;
         }
+
+        Player player = (Player) sender;
+        String playerName = player.getName();
+        double x = player.getLocation().getX();
+        double y = player.getLocation().getY();
+        double z = player.getLocation().getZ();
+        float yaw = player.getLocation().getYaw();
+        float pitch = player.getLocation().getPitch();
+
+        try (Connection connection = plugin.getDatabaseManager().getConnection()) {
+            PreparedStatement statement = connection.prepareStatement(
+                    "REPLACE INTO homes (player, x, y, z, yaw, pitch) VALUES (?, ?, ?, ?, ?, ?)"
+            );
+            statement.setString(1, playerName);
+            statement.setDouble(2, x);
+            statement.setDouble(3, y);
+            statement.setDouble(4, z);
+            statement.setFloat(5, yaw);
+            statement.setFloat(6, pitch);
+            statement.executeUpdate();
+            player.sendMessage("Home set successfully.");
+        } catch (SQLException e) {
+            player.sendMessage("An error occurred while setting your home.");
+            plugin.getLogger().log(Level.SEVERE, "Could not save home location to the database.", e);
+        }
+
+        return true;
+    }
+}
+```
+### /home
+```Java
+public HomeCommand(HomePlugin plugin) {
+        this.plugin = plugin;
     }
 
-    new BukkitRunnable() {
-        @Override
-        public void run() {
-            try (Connection connection = plugin.getDatabaseManager().getConnection()) {
-                PreparedStatement statement = connection.prepareStatement(
-                        "SELECT x, y, z, yaw, pitch FROM homes WHERE player = ?"
-                );
-                statement.setString(1, player.getName());
-                ResultSet resultSet = statement.executeQuery();
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player)) {
+            sender.sendMessage("Only players can use this command.");
+            return true;
+        }
 
-                if (resultSet.next()) {
-                    double x = resultSet.getDouble("x");
-                    double y = resultSet.getDouble("y");
-                    double z = resultSet.getDouble("z");
-                    float yaw = resultSet.getFloat("yaw");
-                    float pitch = resultSet.getFloat("pitch");
+        Player player = (Player) sender;
+        UUID playerId = player.getUniqueId();
+        long cooldownTime = plugin.getConfig().getLong("cooldown");
 
-                    Location homeLocation = new Location(player.getWorld(), x, y, z, yaw, pitch);
+        if (cooldowns.containsKey(playerId)) {
+            long lastUsed = cooldowns.get(playerId);
+            long timeElapsed = (System.currentTimeMillis() - lastUsed) / 1000;
 
-                    Bukkit.getScheduler().runTask(plugin, () -> {
-                        player.teleport(homeLocation);
-                        if (plugin.getConfig().getBoolean("particles")) {
-                            player.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, homeLocation, 100);
-                        }
-                        player.sendMessage("Teleported to your home.");
-                    });
-
-                    cooldowns.put(playerId, System.currentTimeMillis());
-                } else {
-                    Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage("No home set."));
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Could not retrieve home location from the database.", e);
-                Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage("An error occurred while retrieving your home."));
+            if (timeElapsed < cooldownTime) {
+                player.sendMessage("You must wait " + (cooldownTime - timeElapsed) + " seconds to use this command again.");
+                return true;
             }
         }
-    }.runTaskAsynchronously(plugin);
 
-    return true;
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                try (Connection connection = plugin.getDatabaseManager().getConnection()) {
+                    PreparedStatement statement = connection.prepareStatement(
+                            "SELECT x, y, z, yaw, pitch FROM homes WHERE player = ?"
+                    );
+                    statement.setString(1, player.getName());
+                    ResultSet resultSet = statement.executeQuery();
+
+                    if (resultSet.next()) {
+                        double x = resultSet.getDouble("x");
+                        double y = resultSet.getDouble("y");
+                        double z = resultSet.getDouble("z");
+                        float yaw = resultSet.getFloat("yaw");
+                        float pitch = resultSet.getFloat("pitch");
+
+                        Location homeLocation = new Location(player.getWorld(), x, y, z, yaw, pitch);
+
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            player.teleport(homeLocation);
+                            if (plugin.getConfig().getBoolean("particles")) {
+                                player.getWorld().spawnParticle(org.bukkit.Particle.PORTAL, homeLocation, 100);
+                            }
+                            player.sendMessage("Teleported to your home.");
+                        });
+
+                        cooldowns.put(playerId, System.currentTimeMillis());
+                    } else {
+                        Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage("No home set."));
+                    }
+                } catch (SQLException e) {
+                    plugin.getLogger().log(Level.SEVERE, "Could not retrieve home location from the database.", e);
+                    Bukkit.getScheduler().runTask(plugin, () -> player.sendMessage("An error occurred while retrieving your home."));
+                }
+            }
+        }.runTaskAsynchronously(plugin);
+
+        return true;
+    }
 }
 ```
 ## Lógica de Implementação
@@ -152,15 +199,17 @@ O `WindChargeListener` é responsável por adicionar funcionalidades ao item Win
 - `explosionPower`, `projectileSpeed`, `particleScale`: Configurações personalizáveis para o poder da explosão, velocidade do projétil e escala das partículas.
 - `enableParticles`: Booleano que controla se as partículas de explosão são habilitadas.
 
-#### Construtor
-
-Inicializa a referência ao plugin, carrega as configurações do arquivo `config.yml` e define se as partículas estão habilitadas.
+#### Exemplo:
 
 ```java
-public WindChargeListener(JavaPlugin plugin) {
-    this.plugin = plugin;
-    reloadConfig();
-    this.enableParticles = plugin.getConfig().getBoolean("enable-particles", true);
-    plugin.getLogger().info("WindChargeListener initialized");
-}
+  public void reloadConfig() {
+        plugin.reloadConfig();
+        FileConfiguration config = plugin.getConfig();
+        this.explosionPower = config.getDouble("explosion-power", 8.0);
+        this.projectileSpeed = config.getDouble("projectile-speed", 4.0);
+        this.particleScale = config.getDouble("particle-scale", 1.0); // Default scale is 1.0
+        plugin.getLogger().info("Config reloaded: Explosion power set to: " + this.explosionPower);
+        plugin.getLogger().info("Config reloaded: Projectile speed set to: " + this.projectileSpeed);
+        plugin.getLogger().info("Config reloaded: Particle scale set to: " + this.particleScale);
+    }
 ```
